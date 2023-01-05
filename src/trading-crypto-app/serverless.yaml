@@ -1,0 +1,20 @@
+service: test
+
+frameworkVersion: '3'
+
+plugins:
+  - serverless-jetpack
+
+provider:
+ name: aws
+ runtime: nodejs18.x
+ region: eu-central-1
+
+functions:
+ main: # The name of the lambda function
+   # The module 'handler' is exported in the file 'src/lambda'
+   handler: dist/lambda.handler
+   events:
+     - http:
+         method: any
+         path: /{proxy+}
