@@ -5,9 +5,8 @@ import { AppService } from './app.service';
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
-  @Post('trading')
+  @Post('trading/buy')
   async tradingController(@Body() body): Promise<string> {
-    console.info("symbol:", body.symbol)
-    return await this.appService.tradeCrypto(body.symbol);
+      return await this.appService.searchBetterBuyOpportunity();
   }
 }
