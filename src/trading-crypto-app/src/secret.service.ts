@@ -23,6 +23,20 @@ export class SecretService {
             .promise();
         return JSON.parse(secret.SecretString).binanceApiSecret;
     }
+
+    async GetTelegramApiToken(): Promise<string> {
+        const secret = await this.secretsManager
+            .getSecretValue({ SecretId: 'prod/appTrading/telegram' })
+            .promise();
+        return JSON.parse(secret.SecretString).telegramApiToken;
+    }
+
+    async GetTelegramChatId(): Promise<string> {
+        const secret = await this.secretsManager
+            .getSecretValue({ SecretId: 'prod/appTrading/telegram' })
+            .promise();
+        return JSON.parse(secret.SecretString).telegramChatId;
+    }
 }
 
 

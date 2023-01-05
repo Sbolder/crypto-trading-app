@@ -4,6 +4,7 @@ import { HistoryDataRepository, HistoryModel } from './repositories/history-data
 import { OrderBuyMarketRepository, MarketBuyModel } from './repositories/market-buy-data.repository'
 import Binance from 'node-binance-api';
 import { v4 as uuidv4 } from 'uuid';
+import { TelegramService } from './services/telegram.service';
 
 @Injectable()
 export class AppService {
@@ -11,7 +12,10 @@ export class AppService {
     private readonly symbolValueExchange: string = "BUSD";
     private readonly currency: string = "EUR";
 
-    constructor(private readonly secretService: SecretService, private repository: HistoryDataRepository, private marketBuyRepository: OrderBuyMarketRepository) {
+    constructor(private readonly secretService: SecretService,
+        private repository: HistoryDataRepository,
+        private marketBuyRepository: OrderBuyMarketRepository,
+        private bot: TelegramService) {
         this.initializeClient();
     }
 
@@ -21,7 +25,7 @@ export class AppService {
         this.client = initializeBinanceClient(apiKey, apiSecret);
     }
 
-    async searchBetterBuyOpportunity(): Promise<string> {
+    async searchBetterBuyOpportunity() {
 
         const BUSDBalance = await this.getAccountBalance(this.symbolValueExchange);
 
@@ -39,7 +43,6 @@ export class AppService {
 
             }
 
-            return 'OK';
         }
 
     }
@@ -67,7 +70,7 @@ export class AppService {
         }));
 
         priceChanges.sort((a, b) => b.priceChangePercent - a.priceChangePercent);
-        const worstPerformingSymbols = priceChanges.slice(-1);
+        const worstPerformingSymbols = priceChanges.slice(-2);
         return worstPerformingSymbols.reduce((obj, symbol) => {
             obj[symbol.symbol] = symbol.priceChangePercent;
             return obj;
@@ -133,7 +136,7 @@ export class AppService {
                     order: JSON.stringify(order)
                 };
                 this.marketBuyRepository.insertOrderBuyMarket(orderDetail);
-                console.log("ORDER Details", order);
+                this.bot.sendMessage(`Buy on market details: ${orderDetail.order}`)
             }
             else {
                 console.warn("order failed because min or max quantity is out of range symbol: ", symbol);

@@ -5,6 +5,7 @@ import { DynamoDBService } from './dynamodb.service';
 import { HistoryDataRepository } from './repositories/history-data.repository';
 import { OrderBuyMarketRepository } from './repositories/market-buy-data.repository';
 import { SecretService } from './secret.service';
+import { TelegramService } from './services/telegram.service';
 
 @Module({
     imports: [],
@@ -13,7 +14,8 @@ import { SecretService } from './secret.service';
         SecretService,
         DynamoDBService,
         HistoryDataRepository,
-        OrderBuyMarketRepository
+        OrderBuyMarketRepository,
+        TelegramService
         ],
 })
 export class AppModule { }

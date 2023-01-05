@@ -6,7 +6,7 @@ export class AppController {
   constructor(private readonly appService: AppService) {}
 
   @Post('trading/buy')
-  async tradingController(@Body() body): Promise<string> {
-      return await this.appService.searchBetterBuyOpportunity();
+  async tradingController(@Body() body) {
+      await this.appService.searchBetterBuyOpportunity();
   }
 }
