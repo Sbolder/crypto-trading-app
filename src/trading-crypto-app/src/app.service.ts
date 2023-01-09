@@ -39,7 +39,11 @@ export class AppService {
             const singleTransactionQuantity = BUSDBalance / 5;
             for (const [symbol, priceChangePercent] of Object.entries(worsteperformnacesymbol)) {
                 console.log(`Symbol: ${symbol}, Price Change Percent: ${priceChangePercent}`);
-                this.marketBuy(symbol, singleTransactionQuantity);
+                //check the worste performance is in negative, else wait next execution to check better opportunity
+                if (true)//(priceChangePercent != 0)
+                    this.marketBuy(symbol, singleTransactionQuantity);
+                else
+                    console.info(`Symbol: ${symbol}, Price Change Percent: ${priceChangePercent} then do nothing, wait better opportunity`);
 
             }
 
@@ -68,9 +72,9 @@ export class AppService {
             const data = await this.client.prevDay(symbol);
             return { symbol: data.symbol, priceChangePercent: data.priceChangePercent };
         }));
-
+        console.log("PRICE", priceChanges)
         priceChanges.sort((a, b) => b.priceChangePercent - a.priceChangePercent);
-        const worstPerformingSymbols = priceChanges.slice(-2);
+        const worstPerformingSymbols = priceChanges.slice(-1);
         return worstPerformingSymbols.reduce((obj, symbol) => {
             obj[symbol.symbol] = symbol.priceChangePercent;
             return obj;
@@ -132,6 +136,8 @@ export class AppService {
                     id: uuidv4(),
                     symbol: correctSymbolExchange,
                     price: String(assetPrice),
+                    quantity: String(quantityExchange),
+                    status: 'IN-PORTFOLIO',
                     atDate: createdAt,
                     order: JSON.stringify(order)
                 };
@@ -165,6 +171,23 @@ export class AppService {
             return assetPrice[historyModel.symbol];
 
         })();
+
+    }
+
+    async checkProfit(percentProfit: number) {
+
+        const portfolioAssetList = await this.marketBuyRepository.queryByStatus('IN-PORTFOLIO');
+        for (const item of portfolioAssetList.Items) {
+            let currentPrice = await this.getAssetPrice(item.symbol.S);
+            if ((Number(item.price.S) * Number(item.quantity.S) < Number(item.quantity.S) * currentPrice)) {
+                console.log("SELL currentPrice: ", currentPrice, "olderprice, ", item.price.S);
+            } else {
+                
+                console.log("NO SELL currentPrice: ", currentPrice, "olderprice, ", item.price.S);
+            }
+            
+        }
+
 
     }
 
