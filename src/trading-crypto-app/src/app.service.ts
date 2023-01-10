@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Res } from '@nestjs/common';
 import { SecretService, initializeBinanceClient } from './secret.service';
 import { HistoryDataRepository, HistoryModel } from './repositories/history-data.repository';
 import { OrderBuyMarketRepository, MarketBuyModel } from './repositories/market-buy-data.repository'
@@ -30,18 +30,33 @@ export class AppService {
         const BUSDBalance = await this.getAccountBalance(this.symbolValueExchange);
 
         //console.log("TE", symbolsList);
-        if (BUSDBalance <= 10)
-            return 'BUSD Balance too low';
+        if (BUSDBalance <= 10) {
+            console.info("BUSD balance to low")
+            return;
+        }
+
         else {
             console.info('BUSD Balance:', BUSDBalance, ' trying to search good opportunity');
             const symbolsList = await this.getExchangeInfo();
             const worsteperformnacesymbol = await this.getWorstPerformingSymbol(symbolsList);
-            const singleTransactionQuantity = BUSDBalance / 5;
+            let singleTransactionQuantity = 0;
+            if (BUSDBalance >= 100)
+                singleTransactionQuantity = BUSDBalance / 5;
+            else if (BUSDBalance < 100 && BUSDBalance >= 50)
+                singleTransactionQuantity = BUSDBalance / 2;
+            else if (BUSDBalance < 50)
+                singleTransactionQuantity = BUSDBalance;
+            let counterbuy = 0;
             for (const [symbol, priceChangePercent] of Object.entries(worsteperformnacesymbol)) {
                 console.log(`Symbol: ${symbol}, Price Change Percent: ${priceChangePercent}`);
                 //check the worste performance is in negative, else wait next execution to check better opportunity
-                if (true)//(priceChangePercent != 0)
-                    this.marketBuy(symbol, singleTransactionQuantity);
+                if (priceChangePercent != 0 && counterbuy < 2) {
+                    let result = await this.marketBuy(symbol, singleTransactionQuantity);
+                    if (result)
+                        counterbuy++;
+                }
+                    
+                        
                 else
                     console.info(`Symbol: ${symbol}, Price Change Percent: ${priceChangePercent} then do nothing, wait better opportunity`);
 
@@ -72,9 +87,8 @@ export class AppService {
             const data = await this.client.prevDay(symbol);
             return { symbol: data.symbol, priceChangePercent: data.priceChangePercent };
         }));
-        console.log("PRICE", priceChanges)
         priceChanges.sort((a, b) => b.priceChangePercent - a.priceChangePercent);
-        const worstPerformingSymbols = priceChanges.slice(-1);
+        const worstPerformingSymbols = priceChanges.slice(-10);
         return worstPerformingSymbols.reduce((obj, symbol) => {
             obj[symbol.symbol] = symbol.priceChangePercent;
             return obj;
@@ -97,55 +111,70 @@ export class AppService {
     }
 
     //utils method to retrive full list of symbol available on binance for EUR currency
-    async checkLimitMarket(symbol: string, quantity: number, price: number): Promise<boolean> {
+    async checkLimitMarket(symbol: string, quantity: number, price: number): Promise<number> {
         return (async () => {
             const exchangeInfo = await this.client.exchangeInfo();
             const symbolInfo = exchangeInfo.symbols.find((s) => s.symbol === symbol);
             const minNotional = symbolInfo.filters[3].minNotional;
+            const lotSizeFilter = symbolInfo.filters.find((f) => f.filterType === "LOT_SIZE");
+            const lotSize = lotSizeFilter.stepSize;
+            let newQuantity = quantity;
 
             // Check if the notional value of the order is above the minimum allowed value
             if (quantity * price < minNotional) {
                 throw new Error(`Order notional value is below the minimum allowed value of ${minNotional}`);
             }
 
-            if (symbolInfo.filters[1].minQty < quantity && symbolInfo.filters[1].maxQty > quantity) {
-                console.info('minQty: ', symbolInfo.filters[1].minQty, ' maxQty: ', symbolInfo.filters[1].maxQty, ' order Quantity: ', quantity);
-                return true;
+            //check if quantity is multiple of lotSize
+            if (quantity % lotSize !== 0) {
+                const rounding = Math.round(quantity / lotSize);
+                newQuantity = rounding * lotSize;
+                if (newQuantity > quantity) {
+                    newQuantity = newQuantity - lotSize;
+                }
+            }
+
+
+            // Check if the order quantity is within the range of minQty and maxQty 
+            if (symbolInfo.filters[1].minQty <= newQuantity && symbolInfo.filters[1].maxQty >= newQuantity) {
+                console.info('minQty: ', symbolInfo.filters[1].minQty, ' maxQty: ', symbolInfo.filters[1].maxQty, ' order Quantity: ', newQuantity);
+                return newQuantity;
             } else {
                 throw new Error(`Order quantity value is not in the range min e max`);
-                
             }
         })();
     }
 
 
     //order buy a crypto not in async place order and store result in dynamodb 
-    async marketBuy(symbol: string, quantity: number) {
+    async marketBuy(symbol: string, quantity: number): Promise<boolean> {
         const correctSymbolExchange = symbol.replace(this.currency, this.symbolValueExchange);
-        
+
         try {
             const assetPrice = await this.getAssetPrice(correctSymbolExchange);
             const quantityExchange = Math.trunc(quantity / assetPrice);
-            const orderValid = await this.checkLimitMarket(correctSymbolExchange, quantityExchange, assetPrice);
-            if (orderValid) {
+            const newQuantity = await this.checkLimitMarket(correctSymbolExchange, quantityExchange, assetPrice);
+            if (newQuantity > 0) {
                 console.info('order quantity is valid -- proceed to place a order on market', correctSymbolExchange)
-                const order = await this.client.marketBuy(correctSymbolExchange, quantityExchange);
+                const order = await this.client.marketBuy(correctSymbolExchange, newQuantity);
                 const now = new Date();
                 const createdAt = now.toISOString();
                 const orderDetail: MarketBuyModel = {
                     id: uuidv4(),
                     symbol: correctSymbolExchange,
                     price: String(assetPrice),
-                    quantity: String(quantityExchange),
+                    quantity: String(newQuantity),
                     status: 'IN-PORTFOLIO',
                     atDate: createdAt,
                     order: JSON.stringify(order)
                 };
                 this.marketBuyRepository.insertOrderBuyMarket(orderDetail);
                 this.bot.sendMessage(`Buy on market details: ${orderDetail.order}`)
+                return true;
             }
             else {
                 console.warn("order failed because min or max quantity is out of range symbol: ", symbol);
+                return false;
             }
 
         } catch (error) {
@@ -174,21 +203,65 @@ export class AppService {
 
     }
 
+    //method to check that there are a profit and decide sell asset or no
     async checkProfit(percentProfit: number) {
 
         const portfolioAssetList = await this.marketBuyRepository.queryByStatus('IN-PORTFOLIO');
         for (const item of portfolioAssetList.Items) {
             let currentPrice = await this.getAssetPrice(item.symbol.S);
-            if ((Number(item.price.S) * Number(item.quantity.S) < Number(item.quantity.S) * currentPrice)) {
+            let investment = Number(item.price.S) * Number(item.quantity.S);
+            let profit = (currentPrice - Number(item.price.S)) * Number(item.quantity.S);
+
+            if (profit / investment > percentProfit / 100) {
+                const marketBuyModel: MarketBuyModel = {
+                    id: item.id.S,
+                    symbol: item.symbol.S,
+                    price: item.price.S,
+                    quantity: item.quantity.S,
+                    status: item.status.S,
+                    atDate: item.atDate.S,
+                    order: item.order.S
+                }
                 console.log("SELL currentPrice: ", currentPrice, "olderprice, ", item.price.S);
+                await this.marketSell(marketBuyModel);
             } else {
-                
                 console.log("NO SELL currentPrice: ", currentPrice, "olderprice, ", item.price.S);
+                this.bot.sendMessage(`NO SELL OPERATION no profit for: ${item.symbol.S} because currentPrice is ${currentPrice} but we have payed ${item.price.S}`)
             }
-            
+
         }
 
 
+    }
+
+
+    //order sell a crypto place order and store result in dynamodb and send message at telegram account
+    async marketSell(order: MarketBuyModel) {
+        order.symbol;
+        try {
+            console.info('order quantity is valid -- proceed to place a order on market', order.symbol)
+            const trueQuantity = await this.getAccountBalance(order.symbol.replace(this.symbolValueExchange, ""));
+            const assetPrice = await this.getAssetPrice(order.symbol);
+            const newQuantity = await this.checkLimitMarket(order.symbol, trueQuantity, assetPrice);
+            const result = await this.client.marketSell(order.symbol, newQuantity);
+            if (result.status == 'FILLED') {
+                const updatedFields = { status : 'SOLD' };
+
+                await this.marketBuyRepository.updateOrderBuyMarket(order.id, order.symbol, updatedFields);
+                this.bot.sendMessage(`SELL assets operation executed: market details: ${JSON.stringify(result)}`)
+
+            }
+            else
+                console.error("Error during sell assets operation: ", result);
+
+
+
+
+
+
+        } catch (error) {
+            console.error(error);
+        }
     }
 
 

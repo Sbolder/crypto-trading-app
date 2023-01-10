@@ -37,6 +37,28 @@ export class OrderBuyMarketRepository {
         return this.dynamoDB.putItem(params);
     }
 
+    async updateOrderBuyMarket(id: string, symbol: string, updatedFields: { status?: string }): Promise<AWS.DynamoDB.Types.UpdateItemOutput> {
+        const params = {
+            TableName: this.tableName,
+            Key: {
+                'id': { S: id },
+                'symbol': { S: symbol }
+            },
+            UpdateExpression: 'set #status = :newStatus',
+            ExpressionAttributeNames: {
+                '#status': 'status'
+            },
+            ExpressionAttributeValues: {
+                ':newStatus': { S: updatedFields.status }
+            },
+            ReturnValues: 'UPDATED_NEW'
+        };
+
+        return this.dynamoDB.updateItem(params);
+    }
+
+
+
     async queryByStatus(status: string): Promise<AWS.DynamoDB.Types.ScanOutput> {
         const params = {
             TableName: this.tableName,

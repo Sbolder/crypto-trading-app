@@ -21,5 +21,9 @@ export class DynamoDBService {
         return this.dynamoDB.scan(params).promise();
     }
 
+    async updateItem(params: AWS.DynamoDB.Types.UpdateItemInput): Promise<AWS.DynamoDB.Types.UpdateItemOutput> {
+        return this.dynamoDB.updateItem(params).promise();
+    }
+
     // Other methods to interact with DynamoDB...
 }
