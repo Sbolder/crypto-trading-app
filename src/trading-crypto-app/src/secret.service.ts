@@ -40,11 +40,3 @@ export class SecretService {
 }
 
 
-export const initializeBinanceClient = (clientId: string, secret: string) => {
-    const client = new Binance().options({
-        APIKEY: clientId,
-        APISECRET: secret,
-        'family': 4,
-    });
-    return client;
-};

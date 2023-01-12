@@ -1,4 +1,4 @@
-service: test
+service: crypto-application
 
 frameworkVersion: '3'
 

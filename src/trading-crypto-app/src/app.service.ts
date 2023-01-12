@@ -1,35 +1,46 @@
-import { Injectable, Res } from '@nestjs/common';
-import { SecretService, initializeBinanceClient } from './secret.service';
+import { Injectable } from '@nestjs/common';
+import { SecretService} from './secret.service';
 import { HistoryDataRepository, HistoryModel } from './repositories/history-data.repository';
 import { OrderBuyMarketRepository, MarketBuyModel } from './repositories/market-buy-data.repository'
 import Binance from 'node-binance-api';
 import { v4 as uuidv4 } from 'uuid';
 import { TelegramService } from './services/telegram.service';
+import { BinanceService } from './services/binance.service';
 
 @Injectable()
 export class AppService {
-    private client: Binance;
+    //private client: Binance;
     private readonly symbolValueExchange: string = "BUSD";
     private readonly currency: string = "EUR";
 
     constructor(private readonly secretService: SecretService,
         private repository: HistoryDataRepository,
         private marketBuyRepository: OrderBuyMarketRepository,
-        private bot: TelegramService) {
-        this.initializeClient();
+        private bot: TelegramService,
+        private binance: BinanceService) {
+        //this.initializeClient();
     }
 
-    private async initializeClient() {
-        const apiKey = await this.secretService.getApiKey();
-        const apiSecret = await this.secretService.getApiSecret();
-        this.client = initializeBinanceClient(apiKey, apiSecret);
-    }
+    /*async initializeClient() {
+        try {
+
+
+            const apiKey = await this.secretService.getApiKey();
+            const apiSecret = await this.secretService.getApiSecret();
+            this.client = new Binance().options({
+                APIKEY: apiKey,
+                APISECRET: apiSecret,
+                'family': 4,
+            });
+        } catch (error) {
+            console.error(`Error getting secrets: ${error}`);
+        }
+    }*/
 
     async searchBetterBuyOpportunity() {
 
         const BUSDBalance = await this.getAccountBalance(this.symbolValueExchange);
 
-        //console.log("TE", symbolsList);
         if (BUSDBalance <= 10) {
             console.info("BUSD balance to low")
             return;
@@ -48,17 +59,19 @@ export class AppService {
                 singleTransactionQuantity = BUSDBalance;
             let counterbuy = 0;
             for (const [symbol, priceChangePercent] of Object.entries(worsteperformnacesymbol)) {
-                console.log(`Symbol: ${symbol}, Price Change Percent: ${priceChangePercent}`);
+                console.info(`Symbol: ${symbol}, Price Change Percent: ${priceChangePercent}`);
                 //check the worste performance is in negative, else wait next execution to check better opportunity
                 if (priceChangePercent != 0 && counterbuy < 2) {
                     let result = await this.marketBuy(symbol, singleTransactionQuantity);
                     if (result)
                         counterbuy++;
                 }
-                    
-                        
-                else
+                else {
                     console.info(`Symbol: ${symbol}, Price Change Percent: ${priceChangePercent} then do nothing, wait better opportunity`);
+                    this.bot.sendMessage("didn't find good opportunity, try later");
+
+                }
+
 
             }
 
@@ -68,8 +81,8 @@ export class AppService {
 
     //method to retrive account balance of specific symbol
     async getAccountBalance(symbol: string): Promise<number> {
-
-        return this.client.balance()
+        let client = await this.binance.getBinanceClient()
+        return await client.balance()
             .then((response) => {
                 return response[symbol].available;
             })
@@ -84,7 +97,8 @@ export class AppService {
     async getWorstPerformingSymbol(symbols: string[]): Promise<{ [key: string]: number }> {
 
         const priceChanges = await Promise.all(symbols.map(async symbol => {
-            const data = await this.client.prevDay(symbol);
+            let client = await this.binance.getBinanceClient()
+            const data = await client.prevDay(symbol);
             return { symbol: data.symbol, priceChangePercent: data.priceChangePercent };
         }));
         priceChanges.sort((a, b) => b.priceChangePercent - a.priceChangePercent);
@@ -97,7 +111,8 @@ export class AppService {
 
     //utils method to retrive full list of symbol available on binance for EUR currency
     async getExchangeInfo(): Promise<string[]> {
-        return await this.client.exchangeInfo()
+        let client = await this.binance.getBinanceClient()
+        return await client.exchangeInfo()
             .then((exchangeInfo) => {
                 const symbols = exchangeInfo.symbols;
                 const busdSymbols = symbols.filter(symbol => symbol.quoteAsset === this.currency);
@@ -105,6 +120,8 @@ export class AppService {
 
             })
             .catch((error) => {
+                console.error("Error during retrieving exchangeInfo from binance", error)
+                throw new Error(error);
                 // Handle the error
             });
 
@@ -113,11 +130,14 @@ export class AppService {
     //utils method to retrive full list of symbol available on binance for EUR currency
     async checkLimitMarket(symbol: string, quantity: number, price: number): Promise<number> {
         return (async () => {
-            const exchangeInfo = await this.client.exchangeInfo();
+            let client = await this.binance.getBinanceClient()
+            const exchangeInfo = await client.exchangeInfo();
             const symbolInfo = exchangeInfo.symbols.find((s) => s.symbol === symbol);
             const minNotional = symbolInfo.filters[3].minNotional;
             const lotSizeFilter = symbolInfo.filters.find((f) => f.filterType === "LOT_SIZE");
             const lotSize = lotSizeFilter.stepSize;
+            const precisionFilter = symbolInfo.filters.find((f) => f.filterType === "PRICE_FILTER");
+            const maxPrecision = precisionFilter.tickSize;
             let newQuantity = quantity;
 
             // Check if the notional value of the order is above the minimum allowed value
@@ -132,6 +152,12 @@ export class AppService {
                 if (newQuantity > quantity) {
                     newQuantity = newQuantity - lotSize;
                 }
+            }
+
+            // Check if the precision of the quantity is within the allowed range
+            if (newQuantity.toString().split(".")[1].length > maxPrecision) {
+                newQuantity = Number(newQuantity.toFixed(maxPrecision));
+                console.info(`Quantity precision has been rounded to ${maxPrecision} decimal places`);
             }
 
 
@@ -156,7 +182,8 @@ export class AppService {
             const newQuantity = await this.checkLimitMarket(correctSymbolExchange, quantityExchange, assetPrice);
             if (newQuantity > 0) {
                 console.info('order quantity is valid -- proceed to place a order on market', correctSymbolExchange)
-                const order = await this.client.marketBuy(correctSymbolExchange, newQuantity);
+                let client = await this.binance.getBinanceClient()
+                const order = await client.marketBuy(correctSymbolExchange, newQuantity);
                 const now = new Date();
                 const createdAt = now.toISOString();
                 const orderDetail: MarketBuyModel = {
@@ -179,6 +206,7 @@ export class AppService {
 
         } catch (error) {
             console.error(error);
+            this.bot.sendMessage(`Error during buy assets ${JSON.stringify(error)}`);
         }
     }
 
@@ -194,7 +222,8 @@ export class AppService {
         };
 
         return (async () => {
-            const assetPrice = await this.client.prices(historyModel.symbol)
+            let client = await this.binance.getBinanceClient()
+            const assetPrice = await client.prices(historyModel.symbol)
             historyModel.price = assetPrice[historyModel.symbol];
             this.repository.insertItem(historyModel)
             return assetPrice[historyModel.symbol];
@@ -204,6 +233,7 @@ export class AppService {
     }
 
     //method to check that there are a profit and decide sell asset or no
+    //percent of profit was selected from user in api parameter
     async checkProfit(percentProfit: number) {
 
         const portfolioAssetList = await this.marketBuyRepository.queryByStatus('IN-PORTFOLIO');
@@ -222,10 +252,10 @@ export class AppService {
                     atDate: item.atDate.S,
                     order: item.order.S
                 }
-                console.log("SELL currentPrice: ", currentPrice, "olderprice, ", item.price.S);
+                console.info("SELL currentPrice: ", currentPrice, "olderprice, ", item.price.S);
                 await this.marketSell(marketBuyModel);
             } else {
-                console.log("NO SELL currentPrice: ", currentPrice, "olderprice, ", item.price.S);
+                console.info("NO SELL currentPrice: ", currentPrice, "olderprice, ", item.price.S);
                 this.bot.sendMessage(`NO SELL OPERATION no profit for: ${item.symbol.S} because currentPrice is ${currentPrice} but we have payed ${item.price.S}`)
             }
 
@@ -237,30 +267,28 @@ export class AppService {
 
     //order sell a crypto place order and store result in dynamodb and send message at telegram account
     async marketSell(order: MarketBuyModel) {
-        order.symbol;
         try {
             console.info('order quantity is valid -- proceed to place a order on market', order.symbol)
             const trueQuantity = await this.getAccountBalance(order.symbol.replace(this.symbolValueExchange, ""));
             const assetPrice = await this.getAssetPrice(order.symbol);
             const newQuantity = await this.checkLimitMarket(order.symbol, trueQuantity, assetPrice);
-            const result = await this.client.marketSell(order.symbol, newQuantity);
+            let client = await this.binance.getBinanceClient()
+            const result = await client.marketSell(order.symbol, newQuantity);
             if (result.status == 'FILLED') {
-                const updatedFields = { status : 'SOLD' };
+                const updatedFields = { status: 'SOLD' };
 
                 await this.marketBuyRepository.updateOrderBuyMarket(order.id, order.symbol, updatedFields);
                 this.bot.sendMessage(`SELL assets operation executed: market details: ${JSON.stringify(result)}`)
 
             }
-            else
+            else {
                 console.error("Error during sell assets operation: ", result);
-
-
-
-
-
+                this.bot.sendMessage(`SELL ERROR: ${JSON.stringify(result)}`)
+            }
 
         } catch (error) {
             console.error(error);
+            this.bot.sendMessage(`SELL ERROR: ${JSON.stringify(error)}`)
         }
     }
 
