@@ -1,6 +1,8 @@
 {
   "ExpandedNodes": [
-    ""
+    "",
+    "\\src",
+    "\\src\\services"
   ],
   "SelectedNode": "\\serverless.yaml",
   "PreviewInSolutionExplorer": false

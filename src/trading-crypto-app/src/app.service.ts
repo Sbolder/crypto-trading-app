@@ -1,15 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { SecretService} from './secret.service';
+import { SecretService } from './secret.service';
 import { HistoryDataRepository, HistoryModel } from './repositories/history-data.repository';
 import { OrderBuyMarketRepository, MarketBuyModel } from './repositories/market-buy-data.repository'
-import Binance from 'node-binance-api';
 import { v4 as uuidv4 } from 'uuid';
 import { TelegramService } from './services/telegram.service';
 import { BinanceService } from './services/binance.service';
 
 @Injectable()
 export class AppService {
-    //private client: Binance;
+
     private readonly symbolValueExchange: string = "BUSD";
     private readonly currency: string = "EUR";
 
@@ -18,24 +17,10 @@ export class AppService {
         private marketBuyRepository: OrderBuyMarketRepository,
         private bot: TelegramService,
         private binance: BinanceService) {
-        //this.initializeClient();
+
     }
 
-    /*async initializeClient() {
-        try {
 
-
-            const apiKey = await this.secretService.getApiKey();
-            const apiSecret = await this.secretService.getApiSecret();
-            this.client = new Binance().options({
-                APIKEY: apiKey,
-                APISECRET: apiSecret,
-                'family': 4,
-            });
-        } catch (error) {
-            console.error(`Error getting secrets: ${error}`);
-        }
-    }*/
 
     async searchBetterBuyOpportunity() {
 
@@ -128,7 +113,7 @@ export class AppService {
     }
 
     //utils method to retrive full list of symbol available on binance for EUR currency
-    async checkLimitMarket(symbol: string, quantity: number, price: number): Promise<number> {
+    async checkLimitMarket(symbol: string, quantity: number, price: number, operation: string = "BUY"): Promise<number> {
         return (async () => {
             let client = await this.binance.getBinanceClient()
             const exchangeInfo = await client.exchangeInfo();
@@ -155,7 +140,8 @@ export class AppService {
             }
 
             // Check if the precision of the quantity is within the allowed range
-            if (newQuantity.toString().split(".")[1].length > maxPrecision) {
+            let array = newQuantity.toString().split(".");
+            if (array[1] && array[1].length > maxPrecision) {
                 newQuantity = Number(newQuantity.toFixed(maxPrecision));
                 console.info(`Quantity precision has been rounded to ${maxPrecision} decimal places`);
             }
@@ -164,11 +150,33 @@ export class AppService {
             // Check if the order quantity is within the range of minQty and maxQty 
             if (symbolInfo.filters[1].minQty <= newQuantity && symbolInfo.filters[1].maxQty >= newQuantity) {
                 console.info('minQty: ', symbolInfo.filters[1].minQty, ' maxQty: ', symbolInfo.filters[1].maxQty, ' order Quantity: ', newQuantity);
+                if (operation != "BUY") {
+                    let balance = await this.getAccountBalance(symbol.replace(this.symbolValueExchange, ""));
+                    if (newQuantity > balance)
+                        return this.checkLimitMarket(symbol, await this.changeQuantity(newQuantity), price);
+
+                }
+
                 return newQuantity;
             } else {
                 throw new Error(`Order quantity value is not in the range min e max`);
             }
         })();
+    }
+
+    async changeQuantity(quantity: number): Promise<number> {
+        let firstDigit = parseInt(quantity.toString()[0]);
+        let change: number;
+        if (firstDigit >= 1) {
+            change = 1;
+        } else {
+            change = 0.1;
+            while (firstDigit < 1) {
+                change /= 10;
+                firstDigit *= 10;
+            }
+        }
+        return Number((quantity - change).toFixed(3));
     }
 
 
@@ -271,7 +279,7 @@ export class AppService {
             console.info('order quantity is valid -- proceed to place a order on market', order.symbol)
             const trueQuantity = await this.getAccountBalance(order.symbol.replace(this.symbolValueExchange, ""));
             const assetPrice = await this.getAssetPrice(order.symbol);
-            const newQuantity = await this.checkLimitMarket(order.symbol, trueQuantity, assetPrice);
+            const newQuantity = await this.checkLimitMarket(order.symbol, trueQuantity, assetPrice, "SELL");
             let client = await this.binance.getBinanceClient()
             const result = await client.marketSell(order.symbol, newQuantity);
             if (result.status == 'FILLED') {
