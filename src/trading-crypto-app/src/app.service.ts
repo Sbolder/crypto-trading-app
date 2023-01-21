@@ -5,6 +5,7 @@ import { OrderBuyMarketRepository, MarketBuyModel } from './repositories/market-
 import { v4 as uuidv4 } from 'uuid';
 import { TelegramService } from './services/telegram.service';
 import { BinanceService } from './services/binance.service';
+import { isBefore, subDays } from 'date-fns';
 
 @Injectable()
 export class AppService {
@@ -33,20 +34,19 @@ export class AppService {
 
         else {
             console.info('BUSD Balance:', BUSDBalance, ' trying to search good opportunity');
-            const symbolsList = await this.getExchangeInfo();
-            const worsteperformnacesymbol = await this.getWorstPerformingSymbol(symbolsList);
+            const worsteperformnacesymbol = await this.getWorstPerformingSymbol();
             let singleTransactionQuantity = 0;
             if (BUSDBalance >= 100)
                 singleTransactionQuantity = BUSDBalance / 5;
-            else if (BUSDBalance < 100 && BUSDBalance >= 50)
+            else if (BUSDBalance < 100 && BUSDBalance >= 30)
                 singleTransactionQuantity = BUSDBalance / 2;
-            else if (BUSDBalance < 50)
+            else if (BUSDBalance < 30)
                 singleTransactionQuantity = BUSDBalance;
             let counterbuy = 0;
             for (const [symbol, priceChangePercent] of Object.entries(worsteperformnacesymbol)) {
                 console.info(`Symbol: ${symbol}, Price Change Percent: ${priceChangePercent}`);
                 //check the worste performance is in negative, else wait next execution to check better opportunity
-                if (priceChangePercent != 0 && counterbuy < 2) {
+                if (counterbuy < 2) {
                     let result = await this.marketBuy(symbol, singleTransactionQuantity);
                     if (result)
                         counterbuy++;
@@ -79,20 +79,21 @@ export class AppService {
     }
 
     //utils method to find the 3 worste performnac ein the last 24h and retrive a key value pair of symbol and percent of performance
-    async getWorstPerformingSymbol(symbols: string[]): Promise<{ [key: string]: number }> {
+    async getWorstPerformingSymbol(): Promise<{ [key: string]: number }> {
+        let client = await this.binance.getBinanceClient()
+        const tickers = await client.prevDay();
+        const worstPerformers = tickers
+            .filter(ticker => ticker.symbol.endsWith(this.symbolValueExchange) && ticker.priceChangePercent < 0)
+            .sort((a, b) => a.priceChangePercent - b.priceChangePercent)
+            .slice(2, 12);
 
-        const priceChanges = await Promise.all(symbols.map(async symbol => {
-            let client = await this.binance.getBinanceClient()
-            const data = await client.prevDay(symbol);
-            return { symbol: data.symbol, priceChangePercent: data.priceChangePercent };
-        }));
-        priceChanges.sort((a, b) => b.priceChangePercent - a.priceChangePercent);
-        const worstPerformingSymbols = priceChanges.slice(-10);
-        return worstPerformingSymbols.reduce((obj, symbol) => {
-            obj[symbol.symbol] = symbol.priceChangePercent;
-            return obj;
-        }, {});
+        const result = {};
+        worstPerformers.forEach(ticker => {
+            result[ticker.symbol] = ticker.priceChangePercent;
+        });
+        return result;
     }
+
 
     //utils method to retrive full list of symbol available on binance for EUR currency
     async getExchangeInfo(): Promise<string[]> {
@@ -203,7 +204,7 @@ export class AppService {
                     atDate: createdAt,
                     order: JSON.stringify(order)
                 };
-                this.marketBuyRepository.insertOrderBuyMarket(orderDetail);
+                await this.marketBuyRepository.insertOrderBuyMarket(orderDetail);
                 this.bot.sendMessage(`Buy on market details: ${orderDetail.order}`)
                 return true;
             }
@@ -249,20 +250,34 @@ export class AppService {
             let currentPrice = await this.getAssetPrice(item.symbol.S);
             let investment = Number(item.price.S) * Number(item.quantity.S);
             let profit = (currentPrice - Number(item.price.S)) * Number(item.quantity.S);
+            const marketBuyModel: MarketBuyModel = {
+                id: item.id.S,
+                symbol: item.symbol.S,
+                price: item.price.S,
+                quantity: item.quantity.S,
+                status: item.status.S,
+                atDate: item.atDate.S,
+                order: item.order.S
+            }
 
             if (profit / investment > percentProfit / 100) {
-                const marketBuyModel: MarketBuyModel = {
-                    id: item.id.S,
-                    symbol: item.symbol.S,
-                    price: item.price.S,
-                    quantity: item.quantity.S,
-                    status: item.status.S,
-                    atDate: item.atDate.S,
-                    order: item.order.S
-                }
                 console.info("SELL currentPrice: ", currentPrice, "olderprice, ", item.price.S);
                 await this.marketSell(marketBuyModel);
-            } else {
+                return;
+            }
+            else if ((isBefore(new Date(item.atDate.S), subDays(new Date(), 2))) && profit / investment > 1 / 100) {
+                console.info("SELL currentPrice second days: ", currentPrice, "olderprice, ", item.price.S);
+                await this.marketSell(marketBuyModel);
+                return;
+            }
+            else if (isBefore(new Date(item.atDate.S), subDays(new Date(), 3))) {
+                console.info("SELL currentPrice 3 days: ", currentPrice, "olderprice, ", item.price.S);
+                await this.marketSell(marketBuyModel);
+                return;
+            }
+
+
+            else {
                 console.info("NO SELL currentPrice: ", currentPrice, "olderprice, ", item.price.S);
                 this.bot.sendMessage(`NO SELL OPERATION no profit for: ${item.symbol.S} because currentPrice is ${currentPrice} but we have payed ${item.price.S}`)
             }

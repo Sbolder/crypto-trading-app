@@ -1,0 +1,6 @@
+## To check the profit and try to sell assets
+{"httpMethod": "POST", "path": "/app/trading/profit", "body": "{\"percentProfit\":3}", "requestContext": {}}
+
+
+## To check the opportunity and try to buy assets
+{"httpMethod": "POST", "path": "/app/trading/buy", "body": null, "requestContext": {}}
