@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  MarketOrderBuyTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: 'market-order-buytest'
+      AttributeDefinitions:
+        - AttributeName: 'id'
+          AttributeType: 'S'
+        - AttributeName: 'symbol'
+          AttributeType: 'S'
+      KeySchema:
+        - AttributeName: 'id'
+          KeyType: 'HASH'
+        - AttributeName: 'symbol'
+          KeyType: 'RANGE'
+      BillingMode: 'PAY_PER_REQUEST'
+
+  SymbolPriceHistoryTable:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: 'symbol-price-historytest'
+      AttributeDefinitions:
+        - AttributeName: 'id'
+          AttributeType: 'S'
+        - AttributeName: 'symbol'
+          AttributeType: 'S'
+      KeySchema:
+        - AttributeName: 'id'
+          KeyType: 'HASH'
+        - AttributeName: 'symbol'
+          KeyType: 'RANGE'
+      BillingMode: 'PAY_PER_REQUEST'
