@@ -260,26 +260,24 @@ export class AppService {
                 order: item.order.S
             }
 
-            if (profit / investment > percentProfit / 100) {
+            if (profit > 1 ) {
                 console.info("SELL currentPrice: ", currentPrice, "olderprice, ", item.price.S);
                 await this.marketSell(marketBuyModel);
-                return;
             }
-            else if ((isBefore(new Date(item.atDate.S), subDays(new Date(), 2))) && profit / investment > 1 / 100) {
+            else if ((isBefore(new Date(item.atDate.S), subDays(new Date(), 2))) && profit >= 0 ) {
                 console.info("SELL currentPrice second days: ", currentPrice, "olderprice, ", item.price.S);
                 await this.marketSell(marketBuyModel);
-                return;
             }
             else if (isBefore(new Date(item.atDate.S), subDays(new Date(), 3))) {
                 console.info("SELL currentPrice 3 days: ", currentPrice, "olderprice, ", item.price.S);
                 await this.marketSell(marketBuyModel);
-                return;
             }
 
 
             else {
                 console.info("NO SELL currentPrice: ", currentPrice, "olderprice, ", item.price.S);
-                this.bot.sendMessage(`NO SELL OPERATION no profit for: ${item.symbol.S} because currentPrice is ${currentPrice} but we have payed ${item.price.S}`)
+                this.bot.sendMessage(`NO SELL OPERATION no profit for: ${item.symbol.S} because currentPrice is ${currentPrice} but we have payed ${item.price.S}, 
+                    investment: ${investment} --- profit: ${profit} `)
             }
 
         }
@@ -311,7 +309,7 @@ export class AppService {
 
         } catch (error) {
             console.error(error);
-            this.bot.sendMessage(`SELL ERROR: ${JSON.stringify(error)}`)
+            this.bot.sendMessage(`SELL ERROR for symbol ${order.symbol} Consider to sell it manually and fix on dynamoDB-Status: ${JSON.stringify(error)}`)
         }
     }
 
