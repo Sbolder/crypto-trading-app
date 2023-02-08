@@ -9,20 +9,25 @@ import { SecretService } from './secret.service';
 import { BinanceService } from './services/binance.service';
 import { TelegramService } from './services/telegram.service';
 import * as dotenv from 'dotenv';
+import { IndicatorsController } from './controllers/indicators.controller';
+import { TaapiService } from './services/taapi.service';
+import { TechnicalIndicatorsRepository } from './repositories/technical-indicators.repository';
 dotenv.config();
 
 @Module({
     imports: [
         ConfigModule.forRoot(),
     ],
-    controllers: [AppController],
+    controllers: [AppController, IndicatorsController],
     providers: [AppService,
         SecretService,
         DynamoDBService,
         HistoryDataRepository,
         OrderBuyMarketRepository,
+        TechnicalIndicatorsRepository,
         TelegramService,
-        BinanceService
+        BinanceService,
+        TaapiService
         ],
 })
 export class AppModule { }
