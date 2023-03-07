@@ -1,4 +1,5 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Header, Post, Req } from '@nestjs/common';
+import * as rawbody from 'raw-body';
 import { TaapiService } from '../services/taapi.service';
 
 
@@ -7,8 +8,14 @@ export class IndicatorsController {
     constructor(private readonly service: TaapiService) { }
 
     @Post('calculate')
-    async tradingController(@Body() body) {
-        return this.service.applyStrategy(body.symbol);
+    @Header('Content-Type', 'application/json')
+    async tradingController(@Body() body, @Req() req) {
+        const raw = await rawbody(req);
+        const text = raw.toString().trim();
+        const json = JSON.parse(text);
+        console.info("try to search technical indicator for Symbol:", json.symbol )
+
+        return this.service.applyStrategy(json.symbol);
        
     }
 

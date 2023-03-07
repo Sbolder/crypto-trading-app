@@ -9,6 +9,7 @@ provider:
  name: aws
  runtime: nodejs18.x
  region: eu-central-1
+ #role: arn:aws:iam::143445361895:role/cryptoBotRole DAVICOROLE
  role: arn:aws:iam::781570428661:role/crypto-application-dev-eu-central-1-lambdaRole
 
 functions:

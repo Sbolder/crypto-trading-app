@@ -4,3 +4,23 @@
 
 ## To check the opportunity and try to buy assets
 {"httpMethod": "POST", "path": "/app/trading/buy", "body": null, "requestContext": {}}
+
+## To run technical indicators demo
+{
+  "httpMethod": "POST",
+  "path": "/indicators/calculate",
+  "body": "{\"symbol\":\"ETH/USDT\"}",
+  "requestContext": {}
+}
+
+
+## To run technical indicators demo
+{
+  "httpMethod": "POST",
+  "path": "/trading/execute",
+  "body": "{\"symbol\":\"ETH/USDT\", \"betQuantity\": 30}",
+  "requestContext": {}
+}
+
+
+  

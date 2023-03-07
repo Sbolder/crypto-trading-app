@@ -78,6 +78,8 @@ export class AppService {
             })
     }
 
+
+
     //utils method to find the 3 worste performnac ein the last 24h and retrive a key value pair of symbol and percent of performance
     async getWorstPerformingSymbol(): Promise<{ [key: string]: number }> {
         let client = await this.binance.getBinanceClient()
@@ -119,17 +121,14 @@ export class AppService {
             let client = await this.binance.getBinanceClient()
             const exchangeInfo = await client.exchangeInfo();
             const symbolInfo = exchangeInfo.symbols.find((s) => s.symbol === symbol);
-            const minNotional = symbolInfo.filters[3].minNotional;
+            const minNotionalFilter = symbolInfo.filters.find(filter => filter.filterType === 'MIN_NOTIONAL');
+            const minNotionalValue = parseFloat(minNotionalFilter.minNotional);
             const lotSizeFilter = symbolInfo.filters.find((f) => f.filterType === "LOT_SIZE");
             const lotSize = lotSizeFilter.stepSize;
-            const precisionFilter = symbolInfo.filters.find((f) => f.filterType === "PRICE_FILTER");
-            const maxPrecision = precisionFilter.tickSize;
+            const maxPrecision = lotSizeFilter.minQty.indexOf('1') - 1;
             let newQuantity = quantity;
 
-            // Check if the notional value of the order is above the minimum allowed value
-            if (quantity * price < minNotional) {
-                throw new Error(`Order notional value is below the minimum allowed value of ${minNotional}`);
-            }
+            console.info("check limit for:", quantity);
 
             //check if quantity is multiple of lotSize
             if (quantity % lotSize !== 0) {
@@ -139,25 +138,30 @@ export class AppService {
                     newQuantity = newQuantity - lotSize;
                 }
             }
-
+            
             // Check if the precision of the quantity is within the allowed range
-            let array = newQuantity.toString().split(".");
-            if (array[1] && array[1].length > maxPrecision) {
-                newQuantity = Number(newQuantity.toFixed(maxPrecision));
-                console.info(`Quantity precision has been rounded to ${maxPrecision} decimal places`);
-            }
+            console.info("PRECISION", maxPrecision)
+            const factor = Math.pow(10, maxPrecision);
+            newQuantity =  Math.floor(newQuantity * factor) / factor;
 
-
+            console.info("MIN", symbolInfo.filters[1].minQty, "MAX", symbolInfo.filters[1].maxQty, "QTY", newQuantity)
             // Check if the order quantity is within the range of minQty and maxQty 
+                
             if (symbolInfo.filters[1].minQty <= newQuantity && symbolInfo.filters[1].maxQty >= newQuantity) {
                 console.info('minQty: ', symbolInfo.filters[1].minQty, ' maxQty: ', symbolInfo.filters[1].maxQty, ' order Quantity: ', newQuantity);
-                if (operation != "BUY") {
+                //maybe delete this if condition after final refactoring
+                if (operation != "BUY" && operation != "S") {
                     let balance = await this.getAccountBalance(symbol.replace(this.symbolValueExchange, ""));
                     if (newQuantity > balance)
                         return this.checkLimitMarket(symbol, await this.changeQuantity(newQuantity), price);
 
                 }
-
+                // Check if the notional value of the order is above the minimum allowed value
+               
+                if (newQuantity * price < minNotionalValue) {
+                    console.error("MIN_NOTIONAL_VALUE check failed", newQuantity * price, minNotionalValue)
+                    throw new Error(`Order notional value is below the minimum allowed value of ${minNotionalValue}`);
+                }
                 return newQuantity;
             } else {
                 throw new Error(`Order quantity value is not in the range min e max`);

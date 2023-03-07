@@ -2,9 +2,9 @@
   "ExpandedNodes": [
     "",
     "\\src",
-    "\\src\\repositories",
+    "\\src\\dtos",
     "\\src\\services"
   ],
-  "SelectedNode": "\\src\\repositories",
+  "SelectedNode": "\\src\\services\\taapi.service.ts",
   "PreviewInSolutionExplorer": false
 }

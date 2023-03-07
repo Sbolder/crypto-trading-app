@@ -7,6 +7,11 @@ export interface TaapiRequestModel {
         indicators: Array<{
             id: string;
             indicator: string;
+            period?: number;
+            optInFastPeriod?: number;
+            optInSlowPeriod?: number;
+            optInSignalPeriod?: number;
+
         }>;
     };
 }
